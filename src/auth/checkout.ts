@@ -5,12 +5,14 @@ import type {
   CheckoutPreviewResponse,
   CheckoutResult,
   CheckoutRequest,
+  PaymentMode,
 } from "./types";
 import { authRequest, sleep } from "./utils";
 import { loadKeypair } from "./loadKeypair";
 import { getAddress } from "./getAddress";
 import { checkSolBalance, checkUsdcBalance } from "./checkBalances";
 import { payWithMemo } from "./payWithMemo";
+import { paySponsoredIntent } from "./sponsoredPayment";
 import { listProjects } from "./listProjects";
 import { getProject } from "./getProject";
 import {
@@ -174,15 +176,23 @@ export async function pollCheckoutCompletion(
 
 export async function payPaymentIntent(
   secretKey: Uint8Array,
-  intent: CheckoutInitializeResponse
+  intent: CheckoutInitializeResponse,
+  paymentMode: PaymentMode = "self_funded",
+  jwt?: string,
+  userAgent?: string
 ): Promise<string> {
-  // $0 intents are auto-completed by backend — no transaction needed
-  if (intent.amount === 0) {
-    return "";
+  if (intent.amount === 0) return "";
+
+  if (paymentMode === "sponsored") {
+    if (!jwt) {
+      throw new Error("JWT is required for sponsored payments.");
+    }
+    return paySponsoredIntent(secretKey, intent, jwt, userAgent);
   }
 
   const keypair = loadKeypair(secretKey);
   const walletAddress = await getAddress(keypair);
+  const amountRaw = BigInt(intent.amount) * 10_000n;
 
   const solBalance = await checkSolBalance(walletAddress);
   if (solBalance < MIN_SOL_FOR_TX) {
@@ -191,9 +201,6 @@ export async function payPaymentIntent(
     );
   }
 
-  // Convert cents → USDC 6-decimal raw: 4900 cents × 10,000 = 49,000,000 raw = 49.000000 USDC
-  const amountRaw = BigInt(intent.amount) * 10_000n;
-
   const usdcBalance = await checkUsdcBalance(walletAddress);
   if (usdcBalance < amountRaw) {
     throw new Error(
@@ -201,7 +208,6 @@ export async function payPaymentIntent(
     );
   }
 
-  // memo is intent.id
   return payWithMemo(secretKey, intent.destinationWallet, amountRaw, intent.id);
 }
 
@@ -212,6 +218,8 @@ export async function executeCheckout(
   userAgent?: string,
   options?: { skipProjectPolling?: boolean }
 ): Promise<CheckoutResult> {
+  const paymentMode: PaymentMode = request.paymentMode ?? "self_funded";
+
   // 1. Resolve priceId from plan+period, then initialize checkout
   const priceId = await resolvePriceId(
     jwt,
@@ -229,6 +237,7 @@ export async function executeCheckout(
       lastName: request.lastName,
       walletAddress: request.walletAddress,
       couponCode: request.couponCode,
+      paymentMode,
     },
     userAgent
   );
@@ -236,7 +245,14 @@ export async function executeCheckout(
   // 2. Send payment (handles $0 case)
   let txSignature: string | null = null;
   try {
-    txSignature = (await payPaymentIntent(secretKey, intent)) || null;
+    txSignature =
+      (await payPaymentIntent(
+        secretKey,
+        intent,
+        paymentMode,
+        jwt,
+        userAgent
+      )) || null;
   } catch (error) {
     return {
       paymentIntentId: intent.id,

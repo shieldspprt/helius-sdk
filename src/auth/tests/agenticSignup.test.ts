@@ -42,27 +42,6 @@ jest.mock("../getProject", () => ({
   }),
 }));
 
-jest.mock("../checkBalances", () => ({
-  checkSolBalance: jest.fn().mockResolvedValue(10_000_000n),
-  checkUsdcBalance: jest.fn().mockResolvedValue(5_000_000n),
-}));
-
-jest.mock("../payUSDC", () => ({
-  payUSDC: jest.fn().mockResolvedValue("tx-basic-123"),
-}));
-
-jest.mock("../createProject", () => ({
-  createProject: jest.fn().mockResolvedValue({
-    id: "proj-basic",
-    name: "My Project",
-    createdAt: "2025-01-01",
-    verifiedEmail: null,
-    subscription: {},
-    users: [],
-    dnsRecords: [],
-  }),
-}));
-
 jest.mock("../checkout", () => ({
   executeCheckout: jest.fn().mockResolvedValue({
     paymentIntentId: "pi_test",
@@ -81,9 +60,6 @@ jest.mock("../checkout", () => ({
 import { agenticSignup } from "../agenticSignup";
 import { listProjects } from "../listProjects";
 import { executeCheckout, executeUpgrade } from "../checkout";
-import { checkSolBalance, checkUsdcBalance } from "../checkBalances";
-import { payUSDC } from "../payUSDC";
-import { createProject } from "../createProject";
 
 const EXISTING_PROJECT = {
   id: "proj-existing",
@@ -100,44 +76,60 @@ describe("agenticSignup", () => {
     jest.clearAllMocks();
   });
 
-  // ── Basic plan ($1) ──
+  // ── Basic plan (now via checkout) ──
 
-  describe("basic plan (default $1)", () => {
-    it("creates a new project via payUSDC when no plan specified", async () => {
+  describe("basic plan (via checkout)", () => {
+    it("creates a new project via checkout when no plan specified", async () => {
       const result = await agenticSignup({ secretKey: new Uint8Array(64) });
 
       expect(result.status).toBe("success");
       expect(result.jwt).toBe("jwt-token-123");
       expect(result.walletAddress).toBe("WalletAddress123");
-      expect(result.projectId).toBe("proj-basic");
+      expect(result.projectId).toBe("proj-new");
       expect(result.apiKey).toBe("key-abc");
-      expect(result.txSignature).toBe("tx-basic-123");
+      expect(result.txSignature).toBe("tx-sig-abc123");
       expect(result.endpoints).toEqual({
         mainnet: "https://mainnet.helius-rpc.com/?api-key=key-abc",
         devnet: "https://devnet.helius-rpc.com/?api-key=key-abc",
       });
 
-      expect(payUSDC).toHaveBeenCalledWith(new Uint8Array(64));
-      expect(createProject).toHaveBeenCalledWith("jwt-token-123", undefined);
-      expect(executeCheckout).not.toHaveBeenCalled();
+      expect(executeCheckout).toHaveBeenCalledWith(
+        new Uint8Array(64),
+        "jwt-token-123",
+        {
+          plan: "basic",
+          period: "monthly",
+          refId: "ref-1",
+          email: undefined,
+          firstName: undefined,
+          lastName: undefined,
+          couponCode: undefined,
+          paymentMode: undefined,
+        },
+        undefined
+      );
     });
 
-    it("creates a new project via payUSDC when plan='basic'", async () => {
+    it("creates a new project via checkout when plan='basic'", async () => {
       const result = await agenticSignup({
         secretKey: new Uint8Array(64),
         plan: "basic",
       });
 
       expect(result.status).toBe("success");
-      expect(payUSDC).toHaveBeenCalled();
-      expect(executeCheckout).not.toHaveBeenCalled();
+      expect(executeCheckout).toHaveBeenCalledWith(
+        expect.any(Uint8Array),
+        "jwt-token-123",
+        expect.objectContaining({ plan: "basic" }),
+        undefined
+      );
     });
 
     it("treats empty string plan as basic", async () => {
       await agenticSignup({ secretKey: new Uint8Array(64), plan: "" });
 
-      expect(payUSDC).toHaveBeenCalled();
-      expect(executeCheckout).not.toHaveBeenCalled();
+      const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
+      expect(callArgs[2].plan).toBe("basic");
     });
 
     it("returns existing project when one exists (basic plan)", async () => {
@@ -147,60 +139,21 @@ describe("agenticSignup", () => {
 
       expect(result.status).toBe("existing_project");
       expect(result.projectId).toBe("proj-existing");
-      expect(payUSDC).not.toHaveBeenCalled();
       expect(executeCheckout).not.toHaveBeenCalled();
       expect(executeUpgrade).not.toHaveBeenCalled();
     });
 
-    it("throws on insufficient SOL", async () => {
-      (checkSolBalance as jest.Mock).mockResolvedValueOnce(0n);
+    it("passes paymentMode through to checkout for basic plan", async () => {
+      await agenticSignup({
+        secretKey: new Uint8Array(64),
+        paymentMode: "sponsored",
+      });
 
-      await expect(
-        agenticSignup({ secretKey: new Uint8Array(64) })
-      ).rejects.toThrow("Insufficient SOL");
+      const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
+      expect(callArgs[2].paymentMode).toBe("sponsored");
     });
 
-    it("throws on insufficient USDC", async () => {
-      (checkUsdcBalance as jest.Mock).mockResolvedValueOnce(0n);
-
-      await expect(
-        agenticSignup({ secretKey: new Uint8Array(64) })
-      ).rejects.toThrow("Insufficient USDC");
-    });
-
-    it("retries createProject on 5xx errors", async () => {
-      (createProject as jest.Mock)
-        .mockRejectedValueOnce(
-          new Error("API error (500): Internal Server Error")
-        )
-        .mockResolvedValueOnce({
-          id: "proj-retry",
-          name: "Retry Project",
-          createdAt: "2025-01-01",
-          verifiedEmail: null,
-          subscription: {},
-          users: [],
-          dnsRecords: [],
-        });
-
-      const result = await agenticSignup({ secretKey: new Uint8Array(64) });
-
-      expect(result.projectId).toBe("proj-retry");
-      expect(createProject).toHaveBeenCalledTimes(2);
-    });
-
-    it("does not retry createProject on 4xx errors", async () => {
-      (createProject as jest.Mock).mockRejectedValueOnce(
-        new Error("API error (400): Bad Request")
-      );
-
-      await expect(
-        agenticSignup({ secretKey: new Uint8Array(64) })
-      ).rejects.toThrow("API error (400)");
-      expect(createProject).toHaveBeenCalledTimes(1);
-    });
-
-    it("passes userAgent through to basic flow", async () => {
+    it("passes userAgent through to checkout flow", async () => {
       const { walletSignup } = require("../walletSignup");
 
       await agenticSignup({
@@ -215,8 +168,10 @@ describe("agenticSignup", () => {
         "test-agent/1.0"
       );
 
-      expect(createProject).toHaveBeenCalledWith(
+      expect(executeCheckout).toHaveBeenCalledWith(
+        new Uint8Array(64),
         "jwt-token-123",
+        expect.objectContaining({ plan: "basic" }),
         "test-agent/1.0"
       );
     });
@@ -252,10 +207,10 @@ describe("agenticSignup", () => {
           refId: "ref-1",
           ...CONTACT,
           couponCode: undefined,
+          paymentMode: undefined,
         },
         undefined
       );
-      expect(payUSDC).not.toHaveBeenCalled();
     });
 
     it("passes custom plan, period, couponCode, and email", async () => {
@@ -272,6 +227,18 @@ describe("agenticSignup", () => {
       expect(callArgs[2].period).toBe("yearly");
       expect(callArgs[2].couponCode).toBe("SAVE10");
       expect(callArgs[2].email).toBe("user@example.com");
+    });
+
+    it("passes paymentMode: sponsored through to checkout", async () => {
+      await agenticSignup({
+        secretKey: new Uint8Array(64),
+        plan: "developer",
+        paymentMode: "sponsored",
+        ...CONTACT,
+      });
+
+      const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
+      expect(callArgs[2].paymentMode).toBe("sponsored");
     });
 
     it("throws when checkout fails and includes error reason", async () => {
@@ -324,6 +291,7 @@ describe("agenticSignup", () => {
           refId: "ref-1",
           ...CONTACT,
           couponCode: undefined,
+          paymentMode: undefined,
         },
         "test-agent/1.0"
       );
@@ -379,12 +347,12 @@ describe("agenticSignup", () => {
           email: "user@example.com",
           firstName: "Test",
           lastName: "User",
+          paymentMode: undefined,
         },
         undefined,
         { skipProjectPolling: true }
       );
       expect(executeUpgrade).not.toHaveBeenCalled();
-      expect(payUSDC).not.toHaveBeenCalled();
     });
 
     it("calls executeCheckout without customer info for existing user", async () => {
@@ -410,11 +378,25 @@ describe("agenticSignup", () => {
           email: undefined,
           firstName: undefined,
           lastName: undefined,
+          paymentMode: undefined,
         },
         undefined,
         { skipProjectPolling: true }
       );
       expect(executeUpgrade).not.toHaveBeenCalled();
+    });
+
+    it("passes paymentMode through to upgrade checkout", async () => {
+      (listProjects as jest.Mock).mockResolvedValueOnce([EXISTING_PROJECT]);
+
+      await agenticSignup({
+        secretKey: new Uint8Array(64),
+        plan: "business",
+        paymentMode: "sponsored",
+      });
+
+      const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
+      expect(callArgs[2].paymentMode).toBe("sponsored");
     });
 
     it("throws on partial customer info for existing user upgrade", async () => {

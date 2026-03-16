@@ -105,8 +105,10 @@ export type CheckoutPhase =
   | "failed"
   | "expired";
 
+export type PaymentMode = "self_funded" | "sponsored";
+
 export interface CheckoutRequest {
-  plan: string; // 'developer' | 'business' | 'professional'
+  plan: string; // 'basic' | 'developer' | 'business' | 'professional'
   period: "monthly" | "yearly";
   refId: string;
   email?: string;
@@ -114,6 +116,7 @@ export interface CheckoutRequest {
   lastName?: string;
   walletAddress?: string;
   couponCode?: string;
+  paymentMode?: PaymentMode;
 }
 
 export interface CheckoutInitializeRequest {
@@ -124,6 +127,8 @@ export interface CheckoutInitializeRequest {
   lastName?: string;
   walletAddress?: string;
   couponCode?: string;
+  paymentMode?: PaymentMode;
+  signupWalletAddress?: string;
 }
 
 export interface CheckoutInitializeResponse {
@@ -141,6 +146,7 @@ export interface CheckoutInitializeResponse {
   discountAmountCents?: number;
   txSignature?: string;
   payerWallet?: string;
+  actualPayerWallet?: string;
   confirmedAt?: string;
   failedAt?: string;
   failureReason?: string;
@@ -203,6 +209,7 @@ export interface AgenticSignupOptions {
   firstName?: string; // Only for OpenPay plans
   lastName?: string; // Only for OpenPay plans
   couponCode?: string; // Only for OpenPay plans
+  paymentMode?: PaymentMode;
 }
 
 export interface AgenticSignupResult {
@@ -214,6 +221,27 @@ export interface AgenticSignupResult {
   endpoints: { mainnet: string; devnet: string } | null;
   credits: number | null;
   txSignature?: string;
+}
+
+export interface SignupQuote {
+  plan: string;
+  period: "monthly" | "yearly";
+  baseAmountCents: number;
+  discountCents: number;
+  creditsCents: number;
+  dueTodayCents: number;
+  destinationWallet: string;
+  note: string;
+  coupon?: CheckoutPreviewCoupon | null;
+}
+
+export interface SignupFundingIntent {
+  paymentIntentId: string;
+  amountCents: number;
+  destinationWallet: string;
+  solanaPayUrl: string;
+  expiresAt: string;
+  actualPayerWallet?: string;
 }
 
 export interface AuthClient {
@@ -269,8 +297,31 @@ export interface AuthClient {
   ): Promise<CheckoutStatusResponse>;
   payPaymentIntent(
     secretKey: Uint8Array,
-    intent: CheckoutInitializeResponse
+    intent: CheckoutInitializeResponse,
+    paymentMode?: PaymentMode
   ): Promise<string>;
+  getSignupQuote(
+    jwt: string,
+    options: {
+      plan: string;
+      period: "monthly" | "yearly";
+      refId: string;
+      couponCode?: string;
+    }
+  ): Promise<SignupQuote>;
+  initializeSignupFunding(
+    jwt: string,
+    options: {
+      plan: string;
+      period: "monthly" | "yearly";
+      refId: string;
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+      couponCode?: string;
+      paymentMode?: PaymentMode;
+    }
+  ): Promise<SignupFundingIntent>;
   executeUpgrade(
     secretKey: Uint8Array,
     jwt: string,
