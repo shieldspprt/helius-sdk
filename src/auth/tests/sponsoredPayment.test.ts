@@ -24,8 +24,12 @@ jest.mock("@solana/kit", () => ({
   createKeyPairSignerFromBytes: jest.fn().mockImplementation(async () => ({
     keyPair: { publicKey: new Uint8Array(32), privateKey: new Uint8Array(64) },
   })),
-  getSignatureFromTransaction: jest.fn().mockImplementation(() => "tx-signed-sig"),
-  signTransaction: jest.fn().mockImplementation(async () => ({ mock: "signed-tx" })),
+  getSignatureFromTransaction: jest
+    .fn()
+    .mockImplementation(() => "tx-signed-sig"),
+  signTransaction: jest
+    .fn()
+    .mockImplementation(async () => ({ mock: "signed-tx" })),
   getTransactionDecoder: jest.fn().mockImplementation(() => ({
     decode: () => ({ mock: "decoded-tx" }),
   })),

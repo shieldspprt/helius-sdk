@@ -62,7 +62,10 @@ export async function signAndSubmitSponsoredTx(
   const transaction = getTransactionDecoder().decode(transactionBytes);
 
   // Add user's signature (preserves fee payer's existing signature)
-  const signedTransaction = await signTransaction([signer.keyPair], transaction);
+  const signedTransaction = await signTransaction(
+    [signer.keyPair],
+    transaction
+  );
 
   const transactionWithBlockHeight = {
     ...signedTransaction,
