@@ -146,7 +146,6 @@ export interface CheckoutInitializeResponse {
   discountAmountCents?: number;
   txSignature?: string;
   payerWallet?: string;
-  actualPayerWallet?: string;
   confirmedAt?: string;
   failedAt?: string;
   failureReason?: string;
@@ -241,7 +240,12 @@ export interface SignupFundingIntent {
   destinationWallet: string;
   solanaPayUrl: string;
   expiresAt: string;
-  actualPayerWallet?: string;
+}
+
+export interface BuildSponsoredTxResponse {
+  transaction: string;
+  paymentIntentId: string;
+  lastValidBlockHeight: number;
 }
 
 export interface AuthClient {
@@ -298,7 +302,8 @@ export interface AuthClient {
   payPaymentIntent(
     secretKey: Uint8Array,
     intent: CheckoutInitializeResponse,
-    paymentMode?: PaymentMode
+    paymentMode?: PaymentMode,
+    jwt?: string
   ): Promise<string>;
   getSignupQuote(
     jwt: string,

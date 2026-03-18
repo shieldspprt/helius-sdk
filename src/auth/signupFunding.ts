@@ -80,6 +80,5 @@ export async function initializeSignupFunding(
     destinationWallet: intent.destinationWallet,
     solanaPayUrl: intent.solanaPayUrl,
     expiresAt: intent.expiresAt,
-    actualPayerWallet: intent.actualPayerWallet,
   };
 }

@@ -595,11 +595,7 @@ describe("initializeSignupFunding", () => {
   });
 
   it("resolves priceId and returns funding intent", async () => {
-    const initResponse = {
-      ...INIT_RESPONSE,
-      actualPayerWallet: "SponsorWallet",
-    };
-    mockAuthRequest.mockResolvedValue(initResponse);
+    mockAuthRequest.mockResolvedValue(INIT_RESPONSE);
 
     const funding = await initializeSignupFunding("jwt", {
       plan: "developer",
@@ -616,7 +612,6 @@ describe("initializeSignupFunding", () => {
     expect(funding.destinationWallet).toBe("Treasury111");
     expect(funding.solanaPayUrl).toBe("solana:...");
     expect(funding.expiresAt).toBe("2026-01-01T00:00:00Z");
-    expect(funding.actualPayerWallet).toBe("SponsorWallet");
 
     // Verify paymentMode was passed to initialize
     const body = JSON.parse(
@@ -635,6 +630,5 @@ describe("initializeSignupFunding", () => {
     });
 
     expect(funding.paymentIntentId).toBe("pi_test");
-    expect(funding.actualPayerWallet).toBeUndefined();
   });
 });

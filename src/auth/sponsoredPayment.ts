@@ -1,39 +1,85 @@
+import {
+  createSolanaRpc,
+  createSolanaRpcSubscriptions,
+  sendAndConfirmTransactionFactory,
+  createKeyPairSignerFromBytes,
+  getSignatureFromTransaction,
+  signTransaction,
+  getTransactionDecoder,
+  getBase64Decoder,
+} from "@solana/kit";
 import { authRequest } from "./utils";
 import { loadKeypair } from "./loadKeypair";
 import { getAddress } from "./getAddress";
 import { checkUsdcBalance } from "./checkBalances";
-import { buildSponsoredTransfer } from "./buildSponsoredTransfer";
-import type { CheckoutInitializeResponse } from "./types";
-
-interface SponsorSubmitResponse {
-  txSignature: string;
-}
+import { RPC_URL, WS_URL } from "./constants";
+import type {
+  CheckoutInitializeResponse,
+  BuildSponsoredTxResponse,
+} from "./types";
 
 /**
- * Submit a partially signed transaction to the backend sponsor endpoint.
- * The backend adds the fee-payer signature and broadcasts.
+ * Request the backend to build a sponsored transaction.
+ * The backend creates the tx and signs as fee payer.
  */
-export async function submitSponsoredPayment(
+export async function requestSponsoredTransaction(
   jwt: string,
   intent: CheckoutInitializeResponse,
-  serializedTransaction: string,
+  userWalletAddress: string,
   userAgent?: string
-): Promise<string> {
-  const response = await authRequest<SponsorSubmitResponse>(
-    `/checkout/${intent.id}/sponsor-submit`,
+): Promise<BuildSponsoredTxResponse> {
+  return authRequest<BuildSponsoredTxResponse>(
+    `/checkout/${intent.id}/build-sponsored-tx`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify({ transaction: serializedTransaction }),
+      body: JSON.stringify({ userWalletAddress }),
     },
     userAgent
   );
-  return response.txSignature;
 }
 
 /**
- * Full sponsored payment flow: validate USDC balance, build partially signed tx,
- * submit to backend sponsor endpoint. Skips SOL balance check.
+ * Sign a backend-built transaction with the user's keypair and submit it.
+ * The transaction arrives partially signed (fee payer signature present).
+ */
+export async function signAndSubmitSponsoredTx(
+  secretKey: Uint8Array,
+  transactionBase64: string,
+  lastValidBlockHeight: bigint
+): Promise<string> {
+  const rpc = createSolanaRpc(RPC_URL);
+  const rpcSubscriptions = createSolanaRpcSubscriptions(WS_URL);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({
+    rpc,
+    rpcSubscriptions,
+  });
+
+  const signer = await createKeyPairSignerFromBytes(secretKey);
+
+  // Decode the base64 wire-format transaction from the backend
+  const transactionBytes = getBase64Decoder().decode(transactionBase64);
+  const transaction = getTransactionDecoder().decode(transactionBytes);
+
+  // Add user's signature (preserves fee payer's existing signature)
+  const signedTransaction = await signTransaction([signer.keyPair], transaction);
+
+  const transactionWithBlockHeight = {
+    ...signedTransaction,
+    lifetimeConstraint: { lastValidBlockHeight },
+  };
+
+  await sendAndConfirm(
+    transactionWithBlockHeight as Parameters<typeof sendAndConfirm>[0],
+    { commitment: "confirmed" }
+  );
+
+  return getSignatureFromTransaction(signedTransaction);
+}
+
+/**
+ * Full sponsored payment flow: validate USDC balance, request backend-built tx,
+ * sign with user keypair, and submit. Skips SOL balance check.
  */
 export async function paySponsoredIntent(
   secretKey: Uint8Array,
@@ -41,14 +87,6 @@ export async function paySponsoredIntent(
   jwt: string,
   userAgent?: string
 ): Promise<string> {
-  const sponsorWallet = intent.actualPayerWallet;
-  if (!sponsorWallet) {
-    throw new Error(
-      "Sponsored payment requires actualPayerWallet in the payment intent. " +
-        "Ensure the checkout was initialized with paymentMode: 'sponsored'."
-    );
-  }
-
   const keypair = loadKeypair(secretKey);
   const walletAddress = await getAddress(keypair);
   const amountRaw = BigInt(intent.amount) * 10_000n;
@@ -60,13 +98,12 @@ export async function paySponsoredIntent(
     );
   }
 
-  const serializedTx = await buildSponsoredTransfer(
-    secretKey,
-    sponsorWallet,
-    intent.destinationWallet,
-    amountRaw,
-    intent.id
-  );
+  const { transaction, lastValidBlockHeight } =
+    await requestSponsoredTransaction(jwt, intent, walletAddress, userAgent);
 
-  return submitSponsoredPayment(jwt, intent, serializedTx, userAgent);
+  return signAndSubmitSponsoredTx(
+    secretKey,
+    transaction,
+    BigInt(lastValidBlockHeight)
+  );
 }

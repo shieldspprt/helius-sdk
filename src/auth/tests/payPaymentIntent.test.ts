@@ -136,10 +136,7 @@ describe("payPaymentIntent", () => {
   // ── Sponsored ──
 
   describe("sponsored mode", () => {
-    const SPONSORED_INTENT = {
-      ...BASE_INTENT,
-      actualPayerWallet: "SponsorWallet111",
-    };
+    const SPONSORED_INTENT = { ...BASE_INTENT };
 
     beforeEach(() => {
       mockPaySponsoredIntent.mockResolvedValue("tx-sponsored-sig");

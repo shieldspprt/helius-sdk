@@ -48,8 +48,8 @@ export function makeAuthClient(userAgent?: string): AuthClient {
       getCheckoutPreview(jwt, plan, period, refId, coupon, userAgent),
     getPaymentIntent: (jwt, id) => getPaymentIntent(jwt, id, userAgent),
     getPaymentStatus: (jwt, id) => getPaymentStatus(jwt, id, userAgent),
-    payPaymentIntent: (sk, intent, paymentMode) =>
-      payPaymentIntent(sk, intent, paymentMode),
+    payPaymentIntent: (sk, intent, paymentMode, jwt) =>
+      payPaymentIntent(sk, intent, paymentMode, jwt, userAgent),
     getSignupQuote: (jwt, options) => getSignupQuote(jwt, options, userAgent),
     initializeSignupFunding: (jwt, options) =>
       initializeSignupFunding(jwt, options, userAgent),
