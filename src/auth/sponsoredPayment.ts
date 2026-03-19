@@ -6,7 +6,7 @@ import {
   getSignatureFromTransaction,
   signTransaction,
   getTransactionDecoder,
-  getBase64Decoder,
+  getBase64Encoder,
 } from "@solana/kit";
 import { authRequest } from "./utils";
 import { loadKeypair } from "./loadKeypair";
@@ -58,7 +58,7 @@ export async function signAndSubmitSponsoredTx(
   const signer = await createKeyPairSignerFromBytes(secretKey);
 
   // Decode the base64 wire-format transaction from the backend
-  const transactionBytes = getBase64Decoder().decode(transactionBase64);
+  const transactionBytes = getBase64Encoder().encode(transactionBase64);
   const transaction = getTransactionDecoder().decode(transactionBytes);
 
   // Add user's signature (preserves fee payer's existing signature)

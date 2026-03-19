@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 
-export const API_URL = "https://dev-api.helius.xyz/v0";
+export const API_URL = process.env.HELIUS_DEV_API_URL || "https://dev-api.helius.xyz/v0";
 
 export const TREASURY =
   "CEs84tEowsXpH8u4VBf8rJSVgSRypFMfXw9CpGRtQgb6" as Address;
@@ -11,7 +11,7 @@ export const USDC_MINT_MAINNET =
 export const USDC_MINT_DEVNET =
   "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" as Address;
 
-export const USDC_MINT = USDC_MINT_MAINNET;
+export const USDC_MINT = (process.env.SOLANA_NETWORK === "devnet" ? USDC_MINT_DEVNET : USDC_MINT_MAINNET);
 
 /** Legacy: 1 USDC (6 decimals). Only used by payUSDC. */
 export const PAYMENT_AMOUNT = 1_000_000n;
@@ -40,7 +40,7 @@ export const CHECKOUT_POLL_TIMEOUT_MS = 60_000;
 export const PROJECT_POLL_INTERVAL_MS = 2_000;
 export const PROJECT_POLL_TIMEOUT_MS = 30_000;
 
-const RPC_URL = "https://api.mainnet-beta.solana.com";
-const WS_URL = "wss://api.mainnet-beta.solana.com";
+const RPC_URL = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+const WS_URL = process.env.SOLANA_WS_URL || "wss://api.mainnet-beta.solana.com";
 
 export { RPC_URL, WS_URL };

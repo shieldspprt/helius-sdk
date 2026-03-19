@@ -33,8 +33,8 @@ jest.mock("@solana/kit", () => ({
   getTransactionDecoder: jest.fn().mockImplementation(() => ({
     decode: () => ({ mock: "decoded-tx" }),
   })),
-  getBase64Decoder: jest.fn().mockImplementation(() => ({
-    decode: () => new Uint8Array([1, 2, 3]),
+  getBase64Encoder: jest.fn().mockImplementation(() => ({
+    encode: () => new Uint8Array([1, 2, 3]),
   })),
 }));
 
@@ -110,7 +110,7 @@ describe("signAndSubmitSponsoredTx", () => {
 
   it("decodes, signs, and submits the transaction", async () => {
     const {
-      getBase64Decoder,
+      getBase64Encoder,
       getTransactionDecoder,
       signTransaction,
       sendAndConfirmTransactionFactory,
@@ -123,7 +123,7 @@ describe("signAndSubmitSponsoredTx", () => {
       12345678n
     );
 
-    expect(getBase64Decoder).toHaveBeenCalled();
+    expect(getBase64Encoder).toHaveBeenCalled();
     expect(getTransactionDecoder).toHaveBeenCalled();
     expect(signTransaction).toHaveBeenCalled();
     expect(sendAndConfirmTransactionFactory).toHaveBeenCalled();

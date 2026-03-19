@@ -134,6 +134,7 @@ export async function agenticSignup(
       email,
       firstName,
       lastName,
+      walletAddress,
       couponCode: options.couponCode,
       paymentMode: options.paymentMode,
     },

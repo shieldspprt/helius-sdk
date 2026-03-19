@@ -238,6 +238,9 @@ export async function executeCheckout(
       walletAddress: request.walletAddress,
       couponCode: request.couponCode,
       paymentMode,
+      ...(paymentMode === "sponsored" && request.walletAddress
+        ? { signupWalletAddress: request.walletAddress }
+        : {}),
     },
     userAgent
   );
