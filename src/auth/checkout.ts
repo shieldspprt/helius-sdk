@@ -174,6 +174,25 @@ export async function pollCheckoutCompletion(
   };
 }
 
+async function toCheckoutResult(
+  jwt: string,
+  intentId: string,
+  txSig: string | null,
+  userAgent?: string
+): Promise<CheckoutResult> {
+  const s = await pollCheckoutCompletion(jwt, intentId, userAgent);
+  if (s.phase === "failed" || s.phase === "expired")
+    return {
+      paymentIntentId: intentId,
+      txSignature: txSig,
+      status: s.phase,
+      error: s.message,
+    };
+  if (!s.readyToRedirect)
+    return { paymentIntentId: intentId, txSignature: txSig, status: "timeout" };
+  return { paymentIntentId: intentId, txSignature: txSig, status: "completed" };
+}
+
 export async function payPaymentIntent(
   secretKey: Uint8Array,
   intent: CheckoutInitializeResponse,
@@ -238,9 +257,8 @@ export async function executeCheckout(
       walletAddress: request.walletAddress,
       couponCode: request.couponCode,
       paymentMode,
-      ...(paymentMode === "sponsored" && request.walletAddress
-        ? { signupWalletAddress: request.walletAddress }
-        : {}),
+      signupWalletAddress:
+        paymentMode === "sponsored" ? request.walletAddress : undefined,
     },
     userAgent
   );
@@ -266,69 +284,25 @@ export async function executeCheckout(
   }
 
   // 3. Poll for payment confirmation
-  const checkoutStatus = await pollCheckoutCompletion(
-    jwt,
-    intent.id,
-    userAgent
-  );
-
-  if (checkoutStatus.phase === "failed") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "failed",
-      error: checkoutStatus.message,
-    };
-  }
-
-  if (checkoutStatus.phase === "expired") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "expired",
-      error: checkoutStatus.message,
-    };
-  }
-
-  if (!checkoutStatus.readyToRedirect) {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "timeout",
-    };
-  }
+  const result = await toCheckoutResult(jwt, intent.id, txSignature, userAgent);
 
   // 4. Optionally poll for project creation
-  if (!options?.skipProjectPolling) {
+  if (result.status === "completed" && !options?.skipProjectPolling) {
     const projectDeadline = Date.now() + PROJECT_POLL_TIMEOUT_MS;
-    let projectId: string | undefined;
-    let apiKey: string | undefined;
 
     while (Date.now() < projectDeadline) {
       const projects = await listProjects(jwt, userAgent);
       if (projects.length > 0) {
-        projectId = projects[0].id;
-        const details = await getProject(jwt, projectId, userAgent);
-        apiKey = details.apiKeys?.[0]?.keyId;
+        result.projectId = projects[0].id;
+        const details = await getProject(jwt, result.projectId, userAgent);
+        result.apiKey = details.apiKeys?.[0]?.keyId;
         break;
       }
       await sleep(PROJECT_POLL_INTERVAL_MS);
     }
-
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "completed",
-      projectId,
-      apiKey,
-    };
   }
 
-  return {
-    paymentIntentId: intent.id,
-    txSignature,
-    status: "completed",
-  };
+  return result;
 }
 
 /** Execute a plan upgrade via OpenPay checkout.
@@ -369,29 +343,7 @@ export async function executeUpgrade(
     };
   }
 
-  const status = await pollCheckoutCompletion(jwt, intent.id, userAgent);
-
-  if (status.phase === "failed") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "failed",
-      error: status.message,
-    };
-  }
-  if (status.phase === "expired") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "expired",
-      error: status.message,
-    };
-  }
-  if (!status.readyToRedirect) {
-    return { paymentIntentId: intent.id, txSignature, status: "timeout" };
-  }
-
-  return { paymentIntentId: intent.id, txSignature, status: "completed" };
+  return toCheckoutResult(jwt, intent.id, txSignature, userAgent);
 }
 
 export async function executeRenewal(
@@ -420,27 +372,5 @@ export async function executeRenewal(
     };
   }
 
-  const status = await pollCheckoutCompletion(jwt, intent.id, userAgent);
-
-  if (status.phase === "failed") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "failed",
-      error: status.message,
-    };
-  }
-  if (status.phase === "expired") {
-    return {
-      paymentIntentId: intent.id,
-      txSignature,
-      status: "expired",
-      error: status.message,
-    };
-  }
-  if (!status.readyToRedirect) {
-    return { paymentIntentId: intent.id, txSignature, status: "timeout" };
-  }
-
-  return { paymentIntentId: intent.id, txSignature, status: "completed" };
+  return toCheckoutResult(jwt, intent.id, txSignature, userAgent);
 }
