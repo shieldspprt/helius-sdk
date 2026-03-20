@@ -305,7 +305,9 @@ describe("executeCheckout", () => {
     mockCheckUsdcBalance.mockResolvedValue(50_000_000n); // 50 USDC
     mockPayWithMemo.mockResolvedValue("tx-sig-abc");
     // Sponsored payment rejects by default — triggers self-funded fallback
-    mockPaySponsoredIntent.mockRejectedValue(new Error("Not a sponsored intent"));
+    mockPaySponsoredIntent.mockRejectedValue(
+      new Error("Not a sponsored intent")
+    );
     mockListProjects.mockResolvedValue([
       { id: "proj-1", name: "Test" },
     ] as never);
@@ -381,7 +383,7 @@ describe("executeCheckout", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.error).toContain("insufficient SOL");
+    expect(result.error).toContain("Insufficient SOL");
     expect(result.txSignature).toBeNull();
   });
 

@@ -111,7 +111,7 @@ describe("payPaymentIntent", () => {
 
     await expect(
       payPaymentIntent(mockSecretKey, BASE_INTENT, "jwt-123")
-    ).rejects.toThrow("Sponsorship unavailable");
+    ).rejects.toThrow("Insufficient SOL");
   });
 
   // ── No JWT (upgrades/renewals) — self-funded only ──
@@ -142,7 +142,7 @@ describe("payPaymentIntent", () => {
     mockCheckSolBalance.mockResolvedValue(100n);
 
     await expect(payPaymentIntent(mockSecretKey, BASE_INTENT)).rejects.toThrow(
-      "insufficient SOL"
+      "Insufficient SOL"
     );
   });
 

@@ -7,15 +7,9 @@ import type {
   CheckoutRequest,
 } from "./types";
 import { authRequest, sleep } from "./utils";
-import { loadKeypair } from "./loadKeypair";
-import { getAddress } from "./getAddress";
-import { checkSolBalance, checkUsdcBalance } from "./checkBalances";
-import { payWithMemo } from "./payWithMemo";
-import { paySponsoredIntent } from "./sponsoredPayment";
 import { listProjects } from "./listProjects";
 import { getProject } from "./getProject";
 import {
-  MIN_SOL_FOR_TX,
   CHECKOUT_POLL_INTERVAL_MS,
   CHECKOUT_POLL_TIMEOUT_MS,
   PROJECT_POLL_INTERVAL_MS,
@@ -23,6 +17,7 @@ import {
   PLAN_TO_USAGE_PLAN,
 } from "./constants";
 import { fetchOpenPayPriceIds } from "./devPortalConfigs";
+import { payPaymentIntent } from "./payPaymentIntent";
 
 export async function resolvePriceId(
   jwt: string,
@@ -192,53 +187,7 @@ async function toCheckoutResult(
   return { paymentIntentId: intentId, txSignature: txSig, status: "completed" };
 }
 
-export async function payPaymentIntent(
-  secretKey: Uint8Array,
-  intent: CheckoutInitializeResponse,
-  jwt?: string,
-  userAgent?: string
-): Promise<string> {
-  if (intent.amount === 0) return "";
-
-  // Try sponsored payment first when JWT is available
-  if (jwt) {
-    try {
-      return await paySponsoredIntent(secretKey, intent, jwt, userAgent);
-    } catch (error) {
-      // Re-throw USDC balance errors directly — fallback would fail identically
-      if (error instanceof Error && error.message.includes("Insufficient USDC")) {
-        throw error;
-      }
-      // Sponsorship infra issue (backend rejected, network error, etc.) — fall back
-      if (typeof process !== "undefined" && process.env?.DEBUG) {
-        console.warn(
-          `[helius-sdk] Sponsored payment failed, falling back to self-funded: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    }
-  }
-
-  // Self-funded fallback
-  const keypair = loadKeypair(secretKey);
-  const walletAddress = await getAddress(keypair);
-  const amountRaw = BigInt(intent.amount) * 10_000n;
-
-  const solBalance = await checkSolBalance(walletAddress);
-  if (solBalance < MIN_SOL_FOR_TX) {
-    throw new Error(
-      `Sponsorship unavailable and insufficient SOL for transaction fees. Have: ${Number(solBalance) / 1_000_000_000} SOL, need: ~0.001 SOL. Send SOL to: ${walletAddress}`
-    );
-  }
-
-  const usdcBalance = await checkUsdcBalance(walletAddress);
-  if (usdcBalance < amountRaw) {
-    throw new Error(
-      `Insufficient USDC. Have: ${Number(usdcBalance) / 1_000_000} USDC, need: ${intent.amount / 100} USDC. Fund address: ${walletAddress}`
-    );
-  }
-
-  return payWithMemo(secretKey, intent.destinationWallet, amountRaw, intent.id);
-}
+export { payPaymentIntent } from "./payPaymentIntent";
 
 export async function executeCheckout(
   secretKey: Uint8Array,
@@ -273,8 +222,7 @@ export async function executeCheckout(
     userAgent
   );
 
-  // 2. Send payment — pass jwt only for sponsored intents so the sponsored
-  //    attempt fires.  Upgrades (no paymentMode) skip straight to self-funded.
+  // 2. Send payment — pass jwt for sponsored intents; upgrades skip sponsorship.
   let txSignature: string | null = null;
   try {
     txSignature =
