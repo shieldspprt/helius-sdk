@@ -27,7 +27,9 @@ export async function payPaymentIntent(
       if (error instanceof Error && error.message.includes("Insufficient USDC"))
         throw error;
       // Sponsorship infra issue — fall back to self-funded
-      console.warn(`[helius-sdk] Sponsored payment failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `[helius-sdk] Sponsored payment failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
