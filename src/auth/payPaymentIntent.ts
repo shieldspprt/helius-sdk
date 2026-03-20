@@ -26,7 +26,8 @@ export async function payPaymentIntent(
       // USDC errors re-throw — self-funded fallback would fail identically
       if (error instanceof Error && error.message.includes("Insufficient USDC"))
         throw error;
-      // Sponsorship infra issue — fall back to self-funded silently
+      // Sponsorship infra issue — fall back to self-funded
+      console.warn(`[helius-sdk] Sponsored payment failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
