@@ -105,7 +105,7 @@ describe("agenticSignup", () => {
           lastName: undefined,
           walletAddress: "WalletAddress123",
           couponCode: undefined,
-          paymentMode: undefined,
+          paymentMode: "sponsored",
         },
         undefined
       );
@@ -144,10 +144,9 @@ describe("agenticSignup", () => {
       expect(executeUpgrade).not.toHaveBeenCalled();
     });
 
-    it("passes paymentMode through to checkout for basic plan", async () => {
+    it("always sets paymentMode to sponsored for new signups", async () => {
       await agenticSignup({
         secretKey: new Uint8Array(64),
-        paymentMode: "sponsored",
       });
 
       const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
@@ -172,7 +171,7 @@ describe("agenticSignup", () => {
       expect(executeCheckout).toHaveBeenCalledWith(
         new Uint8Array(64),
         "jwt-token-123",
-        expect.objectContaining({ plan: "basic" }),
+        expect.objectContaining({ plan: "basic", paymentMode: "sponsored" }),
         "test-agent/1.0"
       );
     });
@@ -209,7 +208,7 @@ describe("agenticSignup", () => {
           ...CONTACT,
           walletAddress: "WalletAddress123",
           couponCode: undefined,
-          paymentMode: undefined,
+          paymentMode: "sponsored",
         },
         undefined
       );
@@ -231,11 +230,10 @@ describe("agenticSignup", () => {
       expect(callArgs[2].email).toBe("user@example.com");
     });
 
-    it("passes paymentMode: sponsored through to checkout", async () => {
+    it("always uses sponsored paymentMode for new signups", async () => {
       await agenticSignup({
         secretKey: new Uint8Array(64),
         plan: "developer",
-        paymentMode: "sponsored",
         ...CONTACT,
       });
 
@@ -294,7 +292,7 @@ describe("agenticSignup", () => {
           ...CONTACT,
           walletAddress: "WalletAddress123",
           couponCode: undefined,
-          paymentMode: undefined,
+          paymentMode: "sponsored",
         },
         "test-agent/1.0"
       );
@@ -350,7 +348,6 @@ describe("agenticSignup", () => {
           email: "user@example.com",
           firstName: "Test",
           lastName: "User",
-          paymentMode: undefined,
         },
         undefined,
         { skipProjectPolling: true }
@@ -381,7 +378,6 @@ describe("agenticSignup", () => {
           email: undefined,
           firstName: undefined,
           lastName: undefined,
-          paymentMode: undefined,
         },
         undefined,
         { skipProjectPolling: true }
@@ -389,17 +385,16 @@ describe("agenticSignup", () => {
       expect(executeUpgrade).not.toHaveBeenCalled();
     });
 
-    it("passes paymentMode through to upgrade checkout", async () => {
+    it("does not set paymentMode for upgrades (backend blocks sponsored)", async () => {
       (listProjects as jest.Mock).mockResolvedValueOnce([EXISTING_PROJECT]);
 
       await agenticSignup({
         secretKey: new Uint8Array(64),
         plan: "business",
-        paymentMode: "sponsored",
       });
 
       const callArgs = (executeCheckout as jest.Mock).mock.calls[0];
-      expect(callArgs[2].paymentMode).toBe("sponsored");
+      expect(callArgs[2].paymentMode).toBeUndefined();
     });
 
     it("throws on partial customer info for existing user upgrade", async () => {

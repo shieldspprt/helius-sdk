@@ -49,9 +49,10 @@ describe("payPaymentIntent", () => {
     mockCheckSolBalance.mockResolvedValue(10_000_000n);
     mockCheckUsdcBalance.mockResolvedValue(50_000_000n);
     mockPayWithMemo.mockResolvedValue("tx-sig-123");
+    mockPaySponsoredIntent.mockResolvedValue("tx-sponsored-sig");
   });
 
-  // ── Self-funded (default) ──
+  // ── $0 amount ──
 
   it("returns empty string for $0 amount", async () => {
     const result = await payPaymentIntent(mockSecretKey, {
@@ -60,8 +61,71 @@ describe("payPaymentIntent", () => {
     });
     expect(result).toBe("");
     expect(mockPayWithMemo).not.toHaveBeenCalled();
+    expect(mockPaySponsoredIntent).not.toHaveBeenCalled();
+  });
+
+  // ── Sponsored first, then fallback ──
+
+  it("tries sponsored first when jwt is provided, succeeds", async () => {
+    const result = await payPaymentIntent(
+      mockSecretKey,
+      BASE_INTENT,
+      "jwt-123",
+      "test-agent"
+    );
+
+    expect(mockPaySponsoredIntent).toHaveBeenCalledWith(
+      mockSecretKey,
+      BASE_INTENT,
+      "jwt-123",
+      "test-agent"
+    );
+    expect(result).toBe("tx-sponsored-sig");
+    expect(mockPayWithMemo).not.toHaveBeenCalled();
     expect(mockCheckSolBalance).not.toHaveBeenCalled();
   });
+
+  it("falls back to self-funded when sponsored fails and SOL is available", async () => {
+    mockPaySponsoredIntent.mockRejectedValue(new Error("Sponsor wallet empty"));
+
+    const result = await payPaymentIntent(
+      mockSecretKey,
+      BASE_INTENT,
+      "jwt-123"
+    );
+
+    expect(mockPaySponsoredIntent).toHaveBeenCalled();
+    expect(mockCheckSolBalance).toHaveBeenCalled();
+    expect(mockPayWithMemo).toHaveBeenCalledWith(
+      mockSecretKey,
+      "Treasury111",
+      49_000_000n,
+      "pi_test"
+    );
+    expect(result).toBe("tx-sig-123");
+  });
+
+  it("throws when sponsored fails and no SOL for self-funded", async () => {
+    mockPaySponsoredIntent.mockRejectedValue(new Error("Sponsor wallet empty"));
+    mockCheckSolBalance.mockResolvedValue(100n);
+
+    await expect(
+      payPaymentIntent(mockSecretKey, BASE_INTENT, "jwt-123")
+    ).rejects.toThrow("Sponsorship unavailable");
+  });
+
+  // ── No JWT (upgrades/renewals) — self-funded only ──
+
+  it("skips sponsored when no JWT provided", async () => {
+    const result = await payPaymentIntent(mockSecretKey, BASE_INTENT);
+
+    expect(mockPaySponsoredIntent).not.toHaveBeenCalled();
+    expect(mockCheckSolBalance).toHaveBeenCalled();
+    expect(mockPayWithMemo).toHaveBeenCalled();
+    expect(result).toBe("tx-sig-123");
+  });
+
+  // ── Self-funded path details ──
 
   it("sends correct amount: cents * 10_000 = USDC raw", async () => {
     await payPaymentIntent(mockSecretKey, BASE_INTENT);
@@ -74,25 +138,11 @@ describe("payPaymentIntent", () => {
     );
   });
 
-  it("uses intent.id as memo", async () => {
-    await payPaymentIntent(mockSecretKey, {
-      ...BASE_INTENT,
-      id: "pi_custom_memo",
-    });
-
-    expect(mockPayWithMemo).toHaveBeenCalledWith(
-      mockSecretKey,
-      "Treasury111",
-      49_000_000n,
-      "pi_custom_memo"
-    );
-  });
-
-  it("throws on insufficient SOL", async () => {
+  it("throws on insufficient SOL in self-funded path", async () => {
     mockCheckSolBalance.mockResolvedValue(100n);
 
     await expect(payPaymentIntent(mockSecretKey, BASE_INTENT)).rejects.toThrow(
-      "Insufficient SOL"
+      "insufficient SOL"
     );
   });
 
@@ -118,76 +168,14 @@ describe("payPaymentIntent", () => {
     );
   });
 
-  it("defaults to self_funded when paymentMode not specified", async () => {
-    await payPaymentIntent(mockSecretKey, BASE_INTENT);
+  it("returns empty string for $0 amount even with jwt", async () => {
+    const result = await payPaymentIntent(
+      mockSecretKey,
+      { ...BASE_INTENT, amount: 0 },
+      "jwt-123"
+    );
 
-    expect(mockCheckSolBalance).toHaveBeenCalled();
-    expect(mockPayWithMemo).toHaveBeenCalled();
+    expect(result).toBe("");
     expect(mockPaySponsoredIntent).not.toHaveBeenCalled();
-  });
-
-  it("uses self_funded when explicitly specified", async () => {
-    await payPaymentIntent(mockSecretKey, BASE_INTENT, "self_funded");
-
-    expect(mockCheckSolBalance).toHaveBeenCalled();
-    expect(mockPayWithMemo).toHaveBeenCalled();
-  });
-
-  // ── Sponsored ──
-
-  describe("sponsored mode", () => {
-    const SPONSORED_INTENT = { ...BASE_INTENT };
-
-    beforeEach(() => {
-      mockPaySponsoredIntent.mockResolvedValue("tx-sponsored-sig");
-    });
-
-    it("delegates to paySponsoredIntent", async () => {
-      const result = await payPaymentIntent(
-        mockSecretKey,
-        SPONSORED_INTENT,
-        "sponsored",
-        "jwt-123",
-        "test-agent"
-      );
-
-      expect(mockPaySponsoredIntent).toHaveBeenCalledWith(
-        mockSecretKey,
-        SPONSORED_INTENT,
-        "jwt-123",
-        "test-agent"
-      );
-      expect(result).toBe("tx-sponsored-sig");
-    });
-
-    it("does not call self-funded functions", async () => {
-      await payPaymentIntent(
-        mockSecretKey,
-        SPONSORED_INTENT,
-        "sponsored",
-        "jwt-123"
-      );
-
-      expect(mockCheckSolBalance).not.toHaveBeenCalled();
-      expect(mockPayWithMemo).not.toHaveBeenCalled();
-    });
-
-    it("throws when JWT is missing for sponsored mode", async () => {
-      await expect(
-        payPaymentIntent(mockSecretKey, SPONSORED_INTENT, "sponsored")
-      ).rejects.toThrow("JWT is required");
-    });
-
-    it("returns empty string for $0 amount in sponsored mode", async () => {
-      const result = await payPaymentIntent(
-        mockSecretKey,
-        { ...SPONSORED_INTENT, amount: 0 },
-        "sponsored",
-        "jwt-123"
-      );
-
-      expect(result).toBe("");
-      expect(mockPaySponsoredIntent).not.toHaveBeenCalled();
-    });
   });
 });

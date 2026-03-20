@@ -105,6 +105,7 @@ export type CheckoutPhase =
   | "failed"
   | "expired";
 
+/** Internal — SDK always sets "sponsored" for new signups. "self_funded" kept for backend compat (upgrades, renewals). */
 export type PaymentMode = "self_funded" | "sponsored";
 
 export interface CheckoutRequest {
@@ -208,7 +209,6 @@ export interface AgenticSignupOptions {
   firstName?: string; // Only for OpenPay plans
   lastName?: string; // Only for OpenPay plans
   couponCode?: string; // Only for OpenPay plans
-  paymentMode?: PaymentMode;
 }
 
 export interface AgenticSignupResult {
@@ -302,7 +302,6 @@ export interface AuthClient {
   payPaymentIntent(
     secretKey: Uint8Array,
     intent: CheckoutInitializeResponse,
-    paymentMode?: PaymentMode,
     jwt?: string
   ): Promise<string>;
   getSignupQuote(
@@ -320,11 +319,11 @@ export interface AuthClient {
       plan: string;
       period: "monthly" | "yearly";
       refId: string;
+      walletAddress?: string;
       email?: string;
       firstName?: string;
       lastName?: string;
       couponCode?: string;
-      paymentMode?: PaymentMode;
     }
   ): Promise<SignupFundingIntent>;
   executeUpgrade(

@@ -5,7 +5,6 @@ import type {
   CheckoutPreviewResponse,
   CheckoutResult,
   CheckoutRequest,
-  PaymentMode,
 } from "./types";
 import { authRequest, sleep } from "./utils";
 import { loadKeypair } from "./loadKeypair";
@@ -196,19 +195,30 @@ async function toCheckoutResult(
 export async function payPaymentIntent(
   secretKey: Uint8Array,
   intent: CheckoutInitializeResponse,
-  paymentMode: PaymentMode = "self_funded",
   jwt?: string,
   userAgent?: string
 ): Promise<string> {
   if (intent.amount === 0) return "";
 
-  if (paymentMode === "sponsored") {
-    if (!jwt) {
-      throw new Error("JWT is required for sponsored payments.");
+  // Try sponsored payment first when JWT is available
+  if (jwt) {
+    try {
+      return await paySponsoredIntent(secretKey, intent, jwt, userAgent);
+    } catch (error) {
+      // Re-throw USDC balance errors directly — fallback would fail identically
+      if (error instanceof Error && error.message.includes("Insufficient USDC")) {
+        throw error;
+      }
+      // Sponsorship infra issue (backend rejected, network error, etc.) — fall back
+      if (typeof process !== "undefined" && process.env?.DEBUG) {
+        console.warn(
+          `[helius-sdk] Sponsored payment failed, falling back to self-funded: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
-    return paySponsoredIntent(secretKey, intent, jwt, userAgent);
   }
 
+  // Self-funded fallback
   const keypair = loadKeypair(secretKey);
   const walletAddress = await getAddress(keypair);
   const amountRaw = BigInt(intent.amount) * 10_000n;
@@ -216,7 +226,7 @@ export async function payPaymentIntent(
   const solBalance = await checkSolBalance(walletAddress);
   if (solBalance < MIN_SOL_FOR_TX) {
     throw new Error(
-      `Insufficient SOL for transaction fees. Have: ${Number(solBalance) / 1_000_000_000} SOL, need: ~0.001 SOL. Fund address: ${walletAddress}`
+      `Sponsorship unavailable and insufficient SOL for transaction fees. Have: ${Number(solBalance) / 1_000_000_000} SOL, need: ~0.001 SOL. Send SOL to: ${walletAddress}`
     );
   }
 
@@ -237,7 +247,7 @@ export async function executeCheckout(
   userAgent?: string,
   options?: { skipProjectPolling?: boolean }
 ): Promise<CheckoutResult> {
-  const paymentMode: PaymentMode = request.paymentMode ?? "self_funded";
+  const paymentMode = request.paymentMode;
 
   // 1. Resolve priceId from plan+period, then initialize checkout
   const priceId = await resolvePriceId(
@@ -263,15 +273,15 @@ export async function executeCheckout(
     userAgent
   );
 
-  // 2. Send payment (handles $0 case)
+  // 2. Send payment — pass jwt only for sponsored intents so the sponsored
+  //    attempt fires.  Upgrades (no paymentMode) skip straight to self-funded.
   let txSignature: string | null = null;
   try {
     txSignature =
       (await payPaymentIntent(
         secretKey,
         intent,
-        paymentMode,
-        jwt,
+        paymentMode === "sponsored" ? jwt : undefined,
         userAgent
       )) || null;
   } catch (error) {

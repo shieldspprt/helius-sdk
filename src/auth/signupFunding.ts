@@ -1,4 +1,4 @@
-import type { PaymentMode, SignupQuote, SignupFundingIntent } from "./types";
+import type { SignupQuote, SignupFundingIntent } from "./types";
 import {
   getCheckoutPreview,
   resolvePriceId,
@@ -47,11 +47,11 @@ export async function initializeSignupFunding(
     plan: string;
     period: "monthly" | "yearly";
     refId: string;
+    walletAddress?: string;
     email?: string;
     firstName?: string;
     lastName?: string;
     couponCode?: string;
-    paymentMode?: PaymentMode;
   },
   userAgent?: string
 ): Promise<SignupFundingIntent> {
@@ -70,7 +70,8 @@ export async function initializeSignupFunding(
       firstName: options.firstName,
       lastName: options.lastName,
       couponCode: options.couponCode,
-      paymentMode: options.paymentMode,
+      paymentMode: "sponsored",
+      signupWalletAddress: options.walletAddress,
     },
     userAgent
   );

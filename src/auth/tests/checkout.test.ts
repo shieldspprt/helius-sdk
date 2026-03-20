@@ -16,6 +16,7 @@ import { getProject } from "../getProject";
 import { loadKeypair } from "../loadKeypair";
 import { getAddress } from "../getAddress";
 import { fetchOpenPayPriceIds } from "../devPortalConfigs";
+import { paySponsoredIntent } from "../sponsoredPayment";
 
 jest.mock("../utils");
 jest.mock("../checkBalances");
@@ -52,6 +53,9 @@ const mockLoadKeypair = loadKeypair as jest.MockedFunction<typeof loadKeypair>;
 const mockGetAddress = getAddress as jest.MockedFunction<typeof getAddress>;
 const mockFetchOpenPayPriceIds = fetchOpenPayPriceIds as jest.MockedFunction<
   typeof fetchOpenPayPriceIds
+>;
+const mockPaySponsoredIntent = paySponsoredIntent as jest.MockedFunction<
+  typeof paySponsoredIntent
 >;
 
 const MOCK_PRICE_IDS = {
@@ -300,6 +304,8 @@ describe("executeCheckout", () => {
     mockCheckSolBalance.mockResolvedValue(10_000_000n);
     mockCheckUsdcBalance.mockResolvedValue(50_000_000n); // 50 USDC
     mockPayWithMemo.mockResolvedValue("tx-sig-abc");
+    // Sponsored payment rejects by default — triggers self-funded fallback
+    mockPaySponsoredIntent.mockRejectedValue(new Error("Not a sponsored intent"));
     mockListProjects.mockResolvedValue([
       { id: "proj-1", name: "Test" },
     ] as never);
@@ -340,7 +346,7 @@ describe("executeCheckout", () => {
     );
   });
 
-  it("passes paymentMode through to initialize and payment", async () => {
+  it("passes paymentMode: sponsored through to initialize when set in request", async () => {
     const initResponse = {
       ...INIT_RESPONSE,
       amount: 0,
@@ -355,12 +361,14 @@ describe("executeCheckout", () => {
       period: "monthly",
       refId: "ref-1",
       paymentMode: "sponsored",
+      walletAddress: "WalletAddress111111111111111111",
     });
 
-    // Verify paymentMode was included in the initialize request body
+    // Verify paymentMode and signupWalletAddress were included in the initialize request body
     const initCall = mockAuthRequest.mock.calls[0];
     const body = JSON.parse((initCall[1] as RequestInit).body as string);
     expect(body.paymentMode).toBe("sponsored");
+    expect(body.signupWalletAddress).toBe("WalletAddress111111111111111111");
   });
 
   it("returns failed on insufficient SOL", async () => {
@@ -373,7 +381,7 @@ describe("executeCheckout", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.error).toContain("Insufficient SOL");
+    expect(result.error).toContain("insufficient SOL");
     expect(result.txSignature).toBeNull();
   });
 
@@ -594,7 +602,7 @@ describe("initializeSignupFunding", () => {
     mockFetchOpenPayPriceIds.mockResolvedValue(MOCK_PRICE_IDS);
   });
 
-  it("resolves priceId and returns funding intent", async () => {
+  it("resolves priceId and returns funding intent with sponsored mode", async () => {
     mockAuthRequest.mockResolvedValue(INIT_RESPONSE);
 
     const funding = await initializeSignupFunding("jwt", {
@@ -604,7 +612,6 @@ describe("initializeSignupFunding", () => {
       email: "user@example.com",
       firstName: "Test",
       lastName: "User",
-      paymentMode: "sponsored",
     });
 
     expect(funding.paymentIntentId).toBe("pi_test");
@@ -613,7 +620,7 @@ describe("initializeSignupFunding", () => {
     expect(funding.solanaPayUrl).toBe("solana:...");
     expect(funding.expiresAt).toBe("2026-01-01T00:00:00Z");
 
-    // Verify paymentMode was passed to initialize
+    // Verify paymentMode is always sponsored
     const body = JSON.parse(
       (mockAuthRequest.mock.calls[0][1] as RequestInit).body as string
     );

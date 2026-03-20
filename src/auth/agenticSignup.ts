@@ -70,7 +70,6 @@ export async function agenticSignup(
           email,
           firstName,
           lastName,
-          paymentMode: options.paymentMode,
         },
         userAgent,
         { skipProjectPolling: true }
@@ -124,6 +123,7 @@ export async function agenticSignup(
   }
 
   // Checkout for all plans (basic, developer, business, professional)
+  // Always use sponsored mode — payPaymentIntent falls back to self-funded if needed
   const checkoutResult = await executeCheckout(
     secretKey,
     jwt,
@@ -136,7 +136,7 @@ export async function agenticSignup(
       lastName,
       walletAddress,
       couponCode: options.couponCode,
-      paymentMode: options.paymentMode,
+      paymentMode: "sponsored",
     },
     userAgent
   );
